@@ -1,31 +1,386 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
-		<meta charset="utf-8" />
-		<meta
-			name="viewport"
-			content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-		/>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-		<title>reveal.js</title>
+		<title>Data-type profiling: pairing perf with pahole</title>
 
-		<link rel="stylesheet" href="dist/reset.css" />
-		<link rel="stylesheet" href="dist/reveal.css" />
-		<link rel="stylesheet" href="dist/theme/black.css" />
+		<link rel="stylesheet" href="dist/reset.css">
+		<link rel="stylesheet" href="dist/reveal.css">
+		<link rel="stylesheet" href="dist/theme/black.css">
 
 		<!-- Theme used for syntax highlighted code -->
-		<link rel="stylesheet" href="dist/plugin/highlight/monokai.css" />
+		<link rel="stylesheet" href="dist/plugin/highlight/monokai.css">
+		<style>
+			.reveal pre { font-size: 0.45em; }
+			.reveal pre.small { font-size: 0.38em; }
+			.reveal section p.left, .reveal section ul { text-align: left; }
+		</style>
 	</head>
 	<body>
 		<div class="reveal">
 			<div class="slides">
-				<section>Slide 1</section>
-				<section>Slide 2</section>
+				<section>
+					<h2>Data-type profiling:<br>pairing perf with pahole</h2>
+					<br>
+					<br>
+					<br>
+					<table>
+						<tbody>
+							<tr>
+								<th>
+									<center>
+									<i>Arnaldo Carvalho de Melo</i>
+									<br>
+									<i>acme@redhat.com</i>
+									<br>
+									<b>Red Hat</b>
+									<br>
+									<i>GNU Tools Cauldron 2026</i>
+									<br>
+									</center>
+								</th>
+							</tr>
+						</tbody>
+					</table>
+				</section>
+				<section>
+					<h2>What this is about?</h2>
+					<br>
+					<br>
+					<ul>
+						<li>Two views of a struct, disconnected</li>
+						<li>perf: the <i>dynamic</i> view (who touches what)</li>
+						<li>pahole: the <i>static</i> view (where it sits)</li>
+						<li>Gluing them: JSON + CTF</li>
+						<li>What the glue found (bugs!)</li>
+						<li>False sharing, end to end</li>
+					</ul>
+				</section>
+				<section>
+					<h2>pahole: the static view</h2>
+					<br>
+					<ul>
+						<li>Which fields fall on which cacheline</li>
+						<li>Holes, padding, --reorganize suggestions</li>
+						<li>Knows <i>nothing</i> about runtime access</li>
+					</ul>
+				</section>
+				<section>
+					<h2>perf data-type profiling</h2>
+					<br>
+					<ul>
+						<li>Namhyung Kim, merged v6.8, full in v6.10</li>
+						<li>typecln sort key in v6.12</li>
+						<li>Each sampled load/store resolved via BTF + DWARF</li>
+						<li>Per-byte-offset histogram: counts + periods</li>
+						<li><tt>perf report -s type, annotate --data-type, mem -T</tt></li>
+					</ul>
+				</section>
+				<section>
+					<h2>The pipeline</h2>
+					<br>
+					<pre><code data-trim>
+  perf mem record -a --sample-cpu -- ./workload
+  perf report -s type,typeoff --hierarchy -i perf.data
+  # NEW: machine-readable export for pahole
+  perf report --data-type --json=profile.json -i perf.data
+  pahole --data-type-profile=profile.json vmlinux
+  pahole --data-type-profile=profile.json \
+         --suggest-cacheline-groups vmlinux
+					</code></pre>
+				</section>
+				<section>
+					<h2>What a sample tells us today</h2>
+					<br>
+					<ul>
+						<li>Sample lands on an instruction</li>
+						<li>Memory operand resolves to (type, offset)</li>
+						<li>Type + offset resolves to the <i>member</i></li>
+						<li>Histogram over members that were <i>sampled</i></li>
+						<li>Never sampled = absent: "no samples" vs "never accessed"</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Around the sampled read</h2>
+					<br>
+					<ul>
+						<li>A sample comes with an IP</li>
+						<li>Instructions <i>around</i> it touch other members</li>
+						<li>Typically the same cacheline: the working set</li>
+						<li>Today: discarded, only the sampled operand counts</li>
+					</ul>
+				</section>
+				<section>
+					<h2>"Sampling" members with no samples</h2>
+					<br>
+					<ul>
+						<li>Walk the basic block from its entry...</li>
+						<li>...up to the <b>first branch</b> after the sample</li>
+						<li>All of it executed: guaranteed, not guessed</li>
+						<li>Backwards too: reaching the IP executed the block entry..IP</li>
+					</ul>
+					<pre><code data-trim>
+  movl 0xe8(%rbx), %eax   ; +232 sk_ll_usec &lt;- inferred, never sampled
+  ...
+  movl 0xf4(%rbx), %edx   ; +244 sk_rcvbuf  &lt;- SAMPLED (PEBS/IBS here)
+  ...                     ; straight-line: all executed
+  jne  .slow_path         ; first branch: stop here
+					</code></pre>
+				</section>
+				<section>
+					<h2>Why this matters</h2>
+					<br>
+					<ul>
+						<li><b>Coverage</b>: cold-but-real fields enter the profile</li>
+						<li><b>Co-access on the cheap</b>: from aggregate JSON + disasm</li>
+						<li>Per-sample CTF stays for what needs it: true vs false sharing</li>
+						<li>Building blocks exist: perf already resolves operands</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Two transports, one truth</h2>
+					<br>
+					<ul>
+						<li>One <tt>perf.data</tt>, two producers</li>
+						<li>Aggregate JSON (per-event histograms)</li>
+						<li>Per-sample CTF stream (timestamp, cpu, addr, ...)</li>
+						<li>Same pahole analysis consumes both</li>
+						<li><tt>tests/perf_dt_pair.sh</tt> cross-validates them</li>
+					</ul>
+				</section>
+				<section>
+					<h2>The parity check pays off</h2>
+					<br>
+					<p>i7-14700K, PEBS, 287,278 resolved samples in 22 members:</p>
+					<pre class="small"><code data-trim>
+              CTF (per-sample)              JSON (aggregate)
+  saddr   36489 R +   1 W = 36490      36490 R, 0 W
+  daddr   36921 R +   8 W = 36929      36929 R, 0 W
+					</code></pre>
+					<ul>
+						<li>Nine samples out of 287,278</li>
+						<li>Arithmetic exact: same samples, opposite direction</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Two sources of "store?"</h2>
+					<br>
+					<ul>
+						<li>Instruction parser: operand in <i>target</i> slot = store (JSON path)</li>
+						<li><tt>sample-&gt;data_src</tt>: what the hardware said (CTF path)</li>
+						<li><tt>cycles</tt> captures carry no data_src: agree</li>
+						<li>Only memory-event captures expose the drift</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Verdict: the samples are broken</h2>
+					<br>
+					<ul>
+						<li>Store-event samples, store ran in kernel (VMAP-stack addr)</li>
+						<li>PEBS ip fixup failed: IP = interrupted userspace load</li>
+						<li>JSON reports the IP's direction (LOAD)</li>
+						<li>CTF overrides with data_src (STORE)</li>
+						<li>Fix: classify direction <i>once, in the resolver</i></li>
+						<li>event -&gt; data_src -&gt; parser</li>
+					</ul>
+				</section>
+				<section>
+					<h2>The test that found a bug nobody knew about</h2>
+					<br>
+					<ul>
+						<li>Operand-equality test written to drop those nine</li>
+						<li>Next capture: flagged <b>132,819</b> samples</li>
+						<li>72% at plain <tt>disp(%rip)</tt> sites, patched at boot</li>
+						<li><tt>_raw_spin_unlock</tt> alone ~50% of bad_addr</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Statically <tt>call *pv_ops_lock+0x8(%rip)</tt>...</h2>
+					<br>
+					<ul>
+						<li>One fixed operand address: the pv_ops pointer</li>
+						<li>At runtime: native per-instance unlock store</li>
+						<li>28 distinct addresses = per-cpu lock instances</li>
+						<li>Every store attributed to pv_ops: never touched!</li>
+						<li>A bogus attribution looks like a good one</li>
+					</ul>
+				</section>
+				<section>
+					<h2>bad_addr is a metric</h2>
+					<br>
+					<br>
+					<p><i>How much of a kernel profile is being disassembled from text that never executed.</i></p>
+				</section>
+				<section>
+					<h2>Two classes of drops</h2>
+					<br>
+					<ul>
+						<li>Failed PEBS IP fixup (the nine, hand-verified)</li>
+						<li>Static vs runtime text at alternatives-patched sites (the bulk)</li>
+						<li>Both: the recorded IP's disassembly doesn't describe the access</li>
+						<li>Dropping is right in both cases</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Fix direction: REPORTED</h2>
+					<br>
+					<ul>
+						<li>Kernel emits PERF_RECORD_TEXT_POKE for live patches</li>
+						<li><tt>machine__process_text_poke()</tt> updates the DSO data cache</li>
+						<li>capstone/LLVM backends read through that cache</li>
+						<li>Boot patches: synthesize records at record start</li>
+						<li>Enumerate patch-site marker symbols, not section names</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Fix direction: PROPOSED</h2>
+					<br>
+					<ul>
+						<li>The DSO cache is a single mutable <i>snapshot</i></li>
+						<li>Post-hoc annotation sees only the FINAL generation</li>
+						<li>Per-generation attribution needs poke history + sample time</li>
+						<li>Intel PT has this (incremental decode); data-type path doesn't</li>
+						<li>This part is a proposal, not a report</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Open thread</h2>
+					<br>
+					<ul>
+						<li>Remaining ~28% of bad_addr: register-operand sites</li>
+						<li>User/kernel IP split needs its own attribution pass</li>
+						<li>objdump backend reads vmlinux directly: never sees pokes</li>
+					</ul>
+				</section>
+				<section>
+					<h2>False sharing, step by step</h2>
+					<br>
+					<ul>
+						<li>perf's own <tt>false_sharing</tt> workload</li>
+						<li>Told as a TCP connection: <tt>net_conn</tt>, 64-byte aligned</li>
+						<li>Built to collide, fails closed (skip, never false negative)</li>
+					</ul>
+				</section>
+				<section>
+					<h2>The fixture layout</h2>
+					<br>
+					<ul>
+						<li>cacheline 0: identity + rx counters &rarr; <b>the false-sharing line</b></li>
+						<li>cacheline 1: tx + congestion control (true-sharing control)</li>
+						<li>cacheline 2: connection config, shared reads only</li>
+						<li>Readers checksum identity, writer updates counters, same instance</li>
+					</ul>
+				</section>
+				<section>
+					<h2>The chain</h2>
+					<br>
+					<pre><code data-trim>
+  perf mem record --sample-cpu -o fs.data -- \
+      perf test -w false_sharing &lt;s&gt; &lt;nreaders&gt;
+  perf data convert --to-ctf --data-type -i fs.data --force fs.ctf
+  pahole -F dwarf --perf-data-type=fs.ctf -C net_conn $(command -v perf)
+					</code></pre>
+					<ul>
+						<li><tt>net_conn</tt> lives in the perf binary: build ID verified</li>
+					</ul>
+				</section>
+				<section>
+					<h2>What the detector prints</h2>
+					<br>
+					<pre><code data-trim>
+  &gt;&gt;&gt; FALSE SHARING: cacheline 0: saddr / bytes_rx
+					</code></pre>
+					<ul>
+						<li>Same instance, distinct CPUs, a write, inside 10us</li>
+						<li>Lines 1 and 2 silent</li>
+						<li>Plus GROUP (true sharing) hints for co-accessed members</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Difficulty: reliable collision</h2>
+					<br>
+					<ul>
+						<li>Threads pinned to distinct CPUs</li>
+						<li>Fields volatile, or the compiler keeps them in registers</li>
+						<li>Nothing collides: test skips, never asserts a negative</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Difficulty: honest grading</h2>
+					<br>
+					<ul>
+						<li>PEBS/IBS addr + CPU identity &rarr; CONFIRMED</li>
+						<li><tt>perf record -d</tt> fallback &rarr; SUSPECTED</li>
+						<li>The hardware decides how sure pahole may be</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Difficulty: the direction bug</h2>
+					<br>
+					<ul>
+						<li>mem-stores samples classified as loads</li>
+						<li>x86 parser vs hybrid E-core latency path</li>
+						<li>Settled: event -&gt; data_src -&gt; parser, once, in the resolver</li>
+						<li>JSON and CTF producers cannot disagree</li>
+					</ul>
+				</section>
+				<section>
+					<h2>The dropped samples are the story</h2>
+					<br>
+					<ul>
+						<li>bad_addr 132,819 == converter Skipped 132,819</li>
+						<li>JSON total == converter Resolved</li>
+						<li>pahole JSON/CTF byte-identical on resolved types</li>
+						<li>Drops make the verdicts trustworthy</li>
+					</ul>
+				</section>
+				<section>
+					<h2>struct sock: logical != aligned</h2>
+					<br>
+					<ul>
+						<li><tt>__cacheline_group</tt> markers pack without padding</li>
+						<li>Write tail + read head share hardware cachelines</li>
+						<li>Fix exists: <tt>__cacheline_group_begin_aligned()</tt></li>
+						<li>struct sock hasn't adopted it (full story at LPC)</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Caveats</h2>
+					<br>
+					<ul>
+						<li>Inferred entries carry no period: flagged, kept apart</li>
+						<li>Loops: per-anchor-execution guarantees</li>
+						<li>Calls: stop at first branch (any branch), conservative</li>
+						<li>Blocks are the unit</li>
+					</ul>
+				</section>
+				<section>
+					<h2>Work items</h2>
+					<br>
+					<ul>
+						<li>perf: walk the block, emit inferred histogram entries</li>
+						<li>perf: single-source the load/store direction</li>
+						<li>pahole: render inferred distinctly, feed co-access</li>
+						<li>Semantics doc: coverage, not weight</li>
+					</ul>
+				</section>
+				<section>
+					<h2>THE END</h2>
+					<ul>
+						<li>Notes: ~/git/lpc-2026-talks/ (working-notes.md)</li>
+						<li>acme@redhat.com</li>
+						<li><a href=https://bsky.app/profile/acmel.bsky.social>https://bsky.app/profile/acmel.bsky.social</a></li>
+					</ul>
+				</section>
 			</div>
 		</div>
 
 		<script src="dist/reveal.js"></script>
+		<script src="dist/plugin/zoom.js"></script>
 		<script src="dist/plugin/notes.js"></script>
+		<script src="dist/plugin/search.js"></script>
 		<script src="dist/plugin/markdown.js"></script>
 		<script src="dist/plugin/highlight.js"></script>
 		<script>
@@ -36,7 +391,7 @@
 				hash: true,
 
 				// Learn about plugins: https://revealjs.com/plugins/
-				plugins: [RevealMarkdown, RevealHighlight, RevealNotes],
+				plugins: [ RevealZoom, RevealNotes, RevealSearch, RevealMarkdown, RevealHighlight ]
 			});
 		</script>
 	</body>
