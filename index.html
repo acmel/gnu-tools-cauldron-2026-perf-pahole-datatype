@@ -436,6 +436,27 @@
 					</ul>
 				</section>
 				<section>
+					<h2>Related work</h2>
+					<br>
+					<ul>
+						<li>DProf (EuroSys'10): IBS + debug regs to kernel types — ancestor</li>
+						<li>SHERIFF/PREDATOR: precise, instrumented, heavy</li>
+						<li>VTune / AMD uProf: sampling HITM, production-safe</li>
+						<li>TypeCraft (OSDI'26, incl. Namhyung): in-perf type costs — complementary</li>
+						<li>Kernel doc pairs c2c + pahole; we add the intra-type half</li>
+					</ul>
+				</section>
+				<section>
+					<h2>What compilers give us</h2>
+					<br>
+					<ul>
+						<li>-Wpadded (gcc, clang); layout dumps: clang record-layouts, GCC lang-class</li>
+						<li>No PGO struct reorder in either compiler</li>
+						<li>BOLT/AutoFDO/Propeller: code layout only</li>
+						<li>Data layout is the gap this fills</li>
+					</ul>
+				</section>
+				<section>
 					<h2>THE END</h2>
 					<ul>
 						<li>Notes: ~/git/lpc-2026-talks/ (working-notes.md)</li>
