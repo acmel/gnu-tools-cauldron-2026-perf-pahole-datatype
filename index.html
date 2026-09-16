@@ -92,6 +92,75 @@
 					</code></pre>
 				</section>
 				<section>
+					<h2>Dynamic view, real output</h2>
+					<br>
+					<pre><code data-trim>
+  # perf report -s type,typeoff --hierarchy --stdio
+       2.15%     struct inode
+          0.26%     struct inode  +40 (i_sb)
+          0.21%     struct inode +356 (i_readcount.counter)
+          0.15%     struct inode  +56 (i_security)
+          0.15%     struct inode  +13 (i_flags)
+  SNIP (kernel-recipes 2024, find workload)
+					</code></pre>
+				</section>
+				<section>
+					<h2>Grouped by cacheline</h2>
+					<br>
+					<pre><code data-trim>
+  # perf report -s type,typecln,typeoff -H
+     -    2.67%     struct cfs_rq
+        +    1.23%     struct cfs_rq: cache-line 2
+        +    0.57%     struct cfs_rq: cache-line 4
+        +    0.46%     struct cfs_rq: cache-line 6
+					</code></pre>
+				</section>
+				<section>
+					<h2>Per-member percents</h2>
+					<br>
+					<pre><code data-trim>
+  # perf annotate --stdio --data-type
+  Annotate type: 'struct btrfs_key' (6282 samples):
+    Percent  offset  size  field
+    100.00     0      17   struct btrfs_key {
+     45.93     0       8       __u64       objectid;
+     26.26     8       1       __u8        type;
+     27.80     9       8       __u64       offset;
+                           };
+					</code></pre>
+				</section>
+				<section>
+					<h2>Same type, static view</h2>
+					<br>
+					<pre><code data-trim>
+  $ pahole btrfs_key      # reads /sys/kernel/btf/vmlinux
+  struct btrfs_key {
+          __u64            objectid;      /*  0  8 */
+          __u8             type;          /*  8  1 */
+          __u64            offset;        /*  9  8 */
+
+          /* size: 17, cachelines: 1, members: 3 */
+  } __attribute__((__packed__));
+					</code></pre>
+				</section>
+				<section>
+					<h2>With a profile loaded (new)</h2>
+					<br>
+					<pre class="small"><code data-trim>
+  $ pahole --data-type-profile=profile.json vmlinux
+  struct task_struct {
+        unsigned int  __state;  /* 24  4 | 16.4% R:87.6K W:8.8K */
+        ...
+        /* perf data-type profile (cachelines of 64 bytes):
+             cacheline 0 [0-63]:
+               +0    __rb_parent_color  sz=8  nr_reads=6000
+            &gt;&gt;&gt; FALSE SHARING: cacheline 5: owner / count
+        */
+  };
+  (trimmed sketch, numbers from the i7 capture)
+					</code></pre>
+				</section>
+				<section>
 					<h2>What a sample tells us today</h2>
 					<br>
 					<ul>
