@@ -413,7 +413,8 @@
 					<h2>What the detector prints</h2>
 					<br>
 					<pre><code data-trim>
-  &gt;&gt;&gt; FALSE SHARING: cacheline 0: saddr / bytes_rx
+  &gt;&gt;&gt; FALSE SHARING: cacheline 0: saddr / packets_rx
+  &gt;&gt;&gt; GROUP (true sharing): mss / snd_wscale -- consider same cacheline
 					</code></pre>
 					<ul>
 						<li>Same instance, distinct CPUs, a write, inside 10us</li>
