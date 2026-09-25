@@ -108,6 +108,43 @@
 					</code></pre>
 				</section>
 				<section>
+					<h2>perf report -s type</h2>
+					<br>
+					<pre><code data-trim>
+  $ perf report --stdio -s type
+  # Samples: 4  of event 'cpu_atom/mem-loads,ldlat=30/P'
+  # Overhead  Data Type
+  # ........  .........
+     42.86%  struct list_head
+     42.86%  (unknown)
+     14.29%  char
+					</code></pre>
+					<ul>
+						<li>Types resolved from data addresses, via DWARF</li>
+						<li>(unknown): DSO without debug info</li>
+					</ul>
+				</section>
+				<section>
+					<h2>perf report -s type,typeoff, dso</h2>
+					<br>
+					<pre class="small"><code data-trim>
+  $ perf report --stdio -s type,typeoff
+  # Overhead  Data Type        Data Type Offset
+     42.86%  struct list_head  struct list_head +8 (prev)
+     42.86%  (unknown)         (unknown) +0 (no field)
+     14.29%  char              char +0 (no field)
+
+  $ perf report --stdio -s dso,type,typeoff
+  # Overhead  Shared Object      Data Type        Data Type Offset
+     42.86%  [kernel.kallsyms]  struct list_head  struct list_head +8 (prev)
+     28.57%  libc.so.6          (unknown)         (unknown) +0 (no field)
+					</code></pre>
+					<ul>
+						<li>typeoff: which field of the type is hot</li>
+						<li>dso: which binary touches it</li>
+					</ul>
+				</section>
+				<section>
 					<h2>Dynamic view, real output</h2>
 					<br>
 					<pre><code data-trim>
