@@ -222,7 +222,8 @@
 						<li>Memory operand resolves to (type, offset)</li>
 						<li>Type + offset resolves to the <i>member</i></li>
 						<li>Histogram over members that were <i>sampled</i></li>
-						<li>Never sampled = absent: "no samples" vs "never accessed"</li>
+						<li>Never sampled = absent</li>
+						<li>"no samples" vs "never accessed"</li>
 					</ul>
 				</section>
 				<section>
@@ -242,7 +243,8 @@
 						<li>Walk the basic block from its entry...</li>
 						<li>...up to the <b>first branch</b> after the sample</li>
 						<li>All of it executed: guaranteed, not guessed</li>
-						<li>Backwards too: reaching the IP executed the block entry..IP</li>
+						<li>Backwards too</li>
+						<li>reaching the IP executed the block entry..IP</li>
 					</ul>
 					<pre><code data-trim>
   movl 0xe8(%rbx), %eax   ; +232 sk_ll_usec &lt;- inferred, never sampled
@@ -257,9 +259,12 @@
 					<br>
 					<ul>
 						<li><b>Coverage</b>: cold-but-real fields enter the profile</li>
-						<li><b>Co-access on the cheap</b>: from aggregate JSON + disasm</li>
-						<li>Per-sample CTF stays for what needs it: true vs false sharing</li>
-						<li>Building blocks exist: perf already resolves operands</li>
+						<li><b>Co-access on the cheap</b></li>
+						<li>from aggregate JSON + disasm</li>
+						<li>Per-sample CTF stays for what needs it</li>
+						<li>true vs false sharing</li>
+						<li>Building blocks exist</li>
+						<li>perf already resolves operands</li>
 					</ul>
 				</section>
 				<section>
@@ -291,8 +296,10 @@
 					<h2>Two sources of "store?"</h2>
 					<br>
 					<ul>
-						<li>Instruction parser: operand in <i>target</i> slot = store (JSON path)</li>
-						<li><tt>sample-&gt;data_src</tt>: what the hardware said (CTF path)</li>
+						<li>JSON path: instruction parser</li>
+						<li>operand in <i>target</i> slot = store</li>
+						<li>CTF path: <tt>sample-&gt;data_src</tt></li>
+						<li>what the hardware said</li>
 						<li><tt>cycles</tt> captures carry no data_src: agree</li>
 						<li>Only memory-event captures expose the drift</li>
 					</ul>
@@ -301,7 +308,8 @@
 					<h2>Verdict: the samples are broken</h2>
 					<br>
 					<ul>
-						<li>Store-event samples, store ran in kernel (VMAP-stack addr)</li>
+						<li>Store-event samples, store ran in kernel</li>
+						<li>VMAP-stack address in the sample</li>
 						<li>PEBS ip fixup failed: IP = interrupted userspace load</li>
 						<li>JSON reports the IP's direction (LOAD)</li>
 						<li>CTF overrides with data_src (STORE)</li>
@@ -341,8 +349,10 @@
 					<br>
 					<ul>
 						<li>Failed PEBS IP fixup (the nine, hand-verified)</li>
-						<li>Static vs runtime text at alternatives-patched sites (the bulk)</li>
-						<li>Both: the recorded IP's disassembly doesn't describe the access</li>
+						<li>Static vs runtime text</li>
+						<li>alternatives-patched sites (the bulk)</li>
+						<li>Both: the recorded IP's disassembly</li>
+						<li>doesn't describe the access</li>
 						<li>Dropping is right in both cases</li>
 					</ul>
 				</section>
@@ -350,11 +360,14 @@
 					<h2>Fix direction: REPORTED</h2>
 					<br>
 					<ul>
-						<li>Kernel emits PERF_RECORD_TEXT_POKE for live patches</li>
-						<li><tt>machine__process_text_poke()</tt> updates the DSO data cache</li>
+						<li>Kernel emits PERF_RECORD_TEXT_POKE</li>
+						<li>for live patches</li>
+						<li><tt>machine__process_text_poke()</tt></li>
+						<li>updates the DSO data cache</li>
 						<li>capstone/LLVM backends read through that cache</li>
 						<li>Boot patches: synthesize records at record start</li>
-						<li>Enumerate patch-site marker symbols, not section names</li>
+						<li>Enumerate patch-site marker symbols</li>
+						<li>not section names</li>
 					</ul>
 				</section>
 				<section>
@@ -363,8 +376,10 @@
 					<ul>
 						<li>The DSO cache is a single mutable <i>snapshot</i></li>
 						<li>Post-hoc annotation sees only the FINAL generation</li>
-						<li>Per-generation attribution needs poke history + sample time</li>
-						<li>Intel PT has this (incremental decode); data-type path doesn't</li>
+						<li>Per-generation attribution needs</li>
+						<li>poke history + sample time</li>
+						<li>Intel PT has this (incremental decode)</li>
+						<li>data-type path doesn't</li>
 						<li>This part is a proposal, not a report</li>
 					</ul>
 				</section>
@@ -372,9 +387,11 @@
 					<h2>Open thread</h2>
 					<br>
 					<ul>
-						<li>Remaining ~28% of bad_addr: register-operand sites</li>
+						<li>Remaining ~28% of bad_addr</li>
+						<li>register-operand sites</li>
 						<li>User/kernel IP split needs its own attribution pass</li>
-						<li>objdump backend reads vmlinux directly: never sees pokes</li>
+						<li>objdump backend reads vmlinux directly</li>
+						<li>never sees pokes</li>
 					</ul>
 				</section>
 				<section>
@@ -383,17 +400,21 @@
 					<ul>
 						<li>perf's own <tt>false_sharing</tt> workload</li>
 						<li>Told as a TCP connection: <tt>net_conn</tt>, 64-byte aligned</li>
-						<li>Built to collide, fails closed (skip, never false negative)</li>
+						<li>Built to collide, fails closed</li>
+						<li>skip, never false negative</li>
 					</ul>
 				</section>
 				<section>
 					<h2>The fixture layout</h2>
 					<br>
 					<ul>
-						<li>cacheline 0: identity + rx counters &rarr; <b>the false-sharing line</b></li>
-						<li>cacheline 1: tx + congestion control (true-sharing control)</li>
+						<li>cacheline 0: identity + rx counters</li>
+						<li><b>the false-sharing line</b></li>
+						<li>cacheline 1: tx + congestion control</li>
+						<li>true-sharing control</li>
 						<li>cacheline 2: connection config, shared reads only</li>
-						<li>Readers checksum identity, writer updates counters, same instance</li>
+						<li>Readers checksum identity</li>
+						<li>writer updates counters, same instance</li>
 					</ul>
 				</section>
 				<section>
@@ -419,7 +440,8 @@
 					<ul>
 						<li>Same instance, distinct CPUs, a write, inside 10us</li>
 						<li>Lines 1 and 2 silent</li>
-						<li>Plus GROUP (true sharing) hints for co-accessed members</li>
+						<li>Plus GROUP (true sharing) hints</li>
+						<li>for co-accessed members</li>
 					</ul>
 				</section>
 				<section>
@@ -427,7 +449,8 @@
 					<br>
 					<ul>
 						<li>Threads pinned to distinct CPUs</li>
-						<li>Fields volatile, or the compiler keeps them in registers</li>
+						<li>Fields volatile</li>
+						<li>or the compiler keeps them in registers</li>
 						<li>Nothing collides: test skips, never asserts a negative</li>
 					</ul>
 				</section>
@@ -446,7 +469,8 @@
 					<ul>
 						<li>mem-stores samples classified as loads</li>
 						<li>x86 parser vs hybrid E-core latency path</li>
-						<li>Settled: event -&gt; data_src -&gt; parser, once, in the resolver</li>
+						<li>Settled: event -&gt; data_src -&gt; parser</li>
+						<li>once, in the resolver</li>
 						<li>JSON and CTF producers cannot disagree</li>
 					</ul>
 				</section>
@@ -494,18 +518,23 @@
 					<h2>Related work</h2>
 					<br>
 					<ul>
-						<li>DProf (EuroSys'10): IBS + debug regs to kernel types — ancestor</li>
+						<li>DProf (EuroSys'10)</li>
+						<li>IBS + debug regs to kernel types — ancestor</li>
 						<li>SHERIFF/PREDATOR: precise, instrumented, heavy</li>
 						<li>VTune / AMD uProf: sampling HITM, production-safe</li>
-						<li>TypeCraft (OSDI'26, incl. Namhyung): in-perf type costs — complementary</li>
-						<li>Kernel doc pairs c2c + pahole; we add the intra-type half</li>
+						<li>TypeCraft (OSDI'26, incl. Namhyung)</li>
+						<li>in-perf type costs — complementary</li>
+						<li>Kernel doc pairs c2c + pahole</li>
+						<li>we add the intra-type half</li>
 					</ul>
 				</section>
 				<section>
 					<h2>What compilers give us</h2>
 					<br>
 					<ul>
-						<li>-Wpadded (gcc, clang); layout dumps: clang record-layouts, GCC lang-class</li>
+						<li>-Wpadded (gcc, clang)</li>
+						<li>layout dumps: clang record-layouts</li>
+						<li>GCC lang-class</li>
 						<li>No PGO struct reorder in either compiler</li>
 						<li>BOLT/AutoFDO/Propeller: code layout only</li>
 						<li>Data layout is the gap this fills</li>
