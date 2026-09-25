@@ -79,6 +79,22 @@
 					</ul>
 				</section>
 				<section>
+					<h2>Recording data accesses: perf mem record</h2>
+					<br>
+					<pre><code data-trim>
+  $ perf mem record -a -- sleep 10
+  [ perf record: Captured and wrote 0.037 MB perf.data (4 samples) ]
+  $ perf evlist
+  cpu_core/mem-loads,ldlat=30/P
+  cpu_core/mem-stores/P
+					</code></pre>
+					<ul>
+						<li>Samples loads and stores with data addresses</li>
+						<li>Intel PEBS, AMD IBS</li>
+						<li>DWARF turns data addresses into types</li>
+					</ul>
+				</section>
+				<section>
 					<h2>The pipeline</h2>
 					<br>
 					<pre><code data-trim>
