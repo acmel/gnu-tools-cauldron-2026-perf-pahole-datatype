@@ -101,10 +101,11 @@
   perf mem record -a --sample-cpu -- ./workload
   perf report -s type,typeoff --hierarchy -i perf.data
   # NEW: machine-readable export for pahole
-  perf report --data-type --json=profile.json -i perf.data
-  pahole --data-type-profile=profile.json vmlinux
-  pahole --data-type-profile=profile.json \
-         --suggest-cacheline-groups vmlinux
+  perf report -s type --data-type-json=profile.json -i perf.data
+  pahole --perf-data-type=profile.json vmlinux
+  # per-sample analyses (false sharing, group hints):
+  perf data convert --to-ctf=ctf.dir --data-type -i perf.data
+  pahole --perf-data-type=ctf.dir vmlinux
 					</code></pre>
 				</section>
 				<section>
@@ -200,7 +201,7 @@
 					<h2>With a profile loaded (new)</h2>
 					<br>
 					<pre class="small"><code data-trim>
-  $ pahole --data-type-profile=profile.json vmlinux
+  $ pahole --perf-data-type=profile.json vmlinux
   struct task_struct {
         unsigned int  __state;  /* 24  4 | 16.4% R:87.6K W:8.8K */
         ...
