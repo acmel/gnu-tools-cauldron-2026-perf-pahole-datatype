@@ -530,6 +530,18 @@
 					</ul>
 				</section>
 				<section>
+					<h2>Use case: scheduler pointer chasing (TypeCraft)</h2>
+					<br>
+					<ul>
+						<li>Profile: cfs_rq-&gt;tg-&gt;se[cpu] pointer chasing</li>
+						<li><a href=https://git.kernel.org/torvalds/linux/c/dfcfc97b6df0ea8e1b7d3b590022782abbec3389>Co-locate cfs_rq and sched_entity</a>: one allocation</li>
+						<li><a href=https://git.kernel.org/torvalds/linux/c/b8fea7af0e40feb6d9cbbd60b66ff0ec265e868f>Allocate cfs_tg_state with percpu allocator</a></li>
+						<li><a href=https://git.kernel.org/torvalds/linux/c/89e1f67186baca353b68115bb98bd0bfed9f80c8>Remove task_group-&gt;se pointer array</a></li>
+						<li>Merged in v7.0 (Zecheng Li, Google/NCSU)</li>
+						<li>Result: LLC misses -33%, stress-ng +8.8%</li>
+					</ul>
+				</section>
+				<section>
 					<h2>Caveats</h2>
 					<br>
 					<ul>
