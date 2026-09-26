@@ -508,6 +508,28 @@
 					</ul>
 				</section>
 				<section>
+					<h2>Use case: struct sock cacheline groups</h2>
+					<br>
+					<pre class="small"><code data-trim>
+  $ pahole -C sock vmlinux
+  struct sock {
+          struct sock_common         __sk_common;          /*     0  0x88 */
+          /* --- cacheline 2 boundary (128 bytes) was 8 bytes ago --- */
+          __u8  __cacheline_group_begin__sock_write_rx[0];
+          atomic_t                   sk_drops;             /*  0x88   0x4 */
+          __s32                      sk_peek_off;          /*  0x8c   0x4 */
+          struct sk_buff_head        sk_error_queue;       /*  0x90  0x18 */
+          struct sk_buff_head        sk_receive_queue;     /*  0xa8  0x18 */
+					</code></pre>
+					<ul>
+						<li>Fields of the same hot path share a cacheline</li>
+						<li>rx/tx, read-mostly vs read-write: six groups</li>
+						<li>2016: <a href=https://git.kernel.org/torvalds/linux/c/9115e8cd2a0c6eaaa900c462721f12e1d45f326c>sk_drops moved away</a>: UDP flood +20%</li>
+						<li>2024: <a href=https://git.kernel.org/torvalds/linux/c/5d4cc87414c5d11345c4b11d61377d351b5c28a2>sk_peek_off moved</a> for TCP SO_PEEK_OFF</li>
+						<li>TCP_RR: +4-5%</li>
+					</ul>
+				</section>
+				<section>
 					<h2>Caveats</h2>
 					<br>
 					<ul>
