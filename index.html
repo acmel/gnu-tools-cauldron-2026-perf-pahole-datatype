@@ -542,6 +542,18 @@
 					</ul>
 				</section>
 				<section>
+					<h2>Use case: struct file, perf c2c</h2>
+					<br>
+					<ul>
+						<li>perf c2c: file::f_op on a hot line</li>
+						<li>with contended f_lock, f_count, f_pos_lock</li>
+						<li>Fix: the contended trio on one line</li>
+						<li>read-mostly f_path, f_inode, f_op: another line</li>
+						<li>f_mode joins f_count: used together</li>
+						<li><a href=https://git.kernel.org/torvalds/linux/c/a7bc2e8ddf3c8e1f5bfeb401f7ee112956cea259>Merged 2023</a>: UnixBench syscall +30-50%</li>
+					</ul>
+				</section>
+				<section>
 					<h2>Caveats</h2>
 					<br>
 					<ul>
