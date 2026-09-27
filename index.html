@@ -554,6 +554,29 @@
 					</ul>
 				</section>
 				<section>
+					<h2>perf c2c: the new function view</h2>
+					<br>
+					<pre class="small"><code data-trim>
+  $ perf c2c record perf bench futex hash -t 4 -r 1 -s
+  $ perf c2c report --stdio --function
+      Cycles    Store
+           %    count  Function / Contending function / Cacheline
+    -  47.89%      703  - [k] _raw_spin_lock
+                   322    - [k] _raw_spin_lock
+                    24        0xffff8b6dcbadf040
+                   205    - [k] futex_q_unlock
+					</code></pre>
+					<ul>
+						<li>Aug 2026, Jiebin Sun (Intel): function view</li>
+						<li>TAB in the cacheline view switches to it</li>
+						<li>reader -&gt; contending writer -&gt; cacheline</li>
+						<li>who reads, who writes, which line: one screen</li>
+						<li>'d' opens the cacheline detail view</li>
+						<li>needs iaddr in --coalesce</li>
+						<li><a href=https://git.kernel.org/torvalds/linux/c/16e113d46d29eb8bf13a5a58de6fb38f24f1aec2>Merged for v7.3</a>, stdio in perf-tools-next</li>
+					</ul>
+				</section>
+				<section>
 					<h2>Caveats</h2>
 					<br>
 					<ul>
