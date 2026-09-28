@@ -369,10 +369,10 @@ jne  .slow_path         ; first branch: stop here
 						<li>Those can feed false sharing and co-access</li>
 						<li>Other base registers: other objects, no address</li>
 						<li>Those give type coverage only</li>
-						<li>No period in either case: coverage, not cost</li>
+						<li>Period: same executions, not same event cost</li>
 					</ul>
 
-					<aside class="notes">Not implemented yet. An access through the same base register as the sampled one, with the register unchanged in between, is the same object: its data address is the sampled address adjusted by the difference in displacement, so it can take part in instance-based analysis (false sharing, co-access on the same instance). Accesses through other registers touch other objects whose address we do not have: they only add to type coverage.</aside>
+					<aside class="notes">Not implemented yet. An access through the same base register as the sampled one, with the register unchanged in between, is the same object: its data address is the sampled address adjusted by the difference in displacement, so it can take part in instance-based analysis (false sharing, co-access on the same instance). Accesses through other registers touch other objects whose address we do not have: they only add to type coverage. Period: an inferred access in the same straight-line block executed as often as the sampled one, so the sample period transfers as an execution count. It does not transfer as event cost: with mem-loads,ldlat=30 the sampled load qualified, the inferred one may not have (often it hits the line the sampled access brought in), and the latency weight belongs to the sampled instruction only.</aside>
 					<p><small><i>preliminary, unpublished</i></small></p>
 				</section>
 				<section>
@@ -383,7 +383,7 @@ jne  .slow_path         ; first branch: stop here
 						<li>Co-access on the cheap: JSON + disassembly</li>
 						<li>Per-sample CTF stays for true vs false sharing</li>
 						<li>perf does it: .text open, replaying anyway</li>
-						<li>Caveat: inferred entries have no period</li>
+						<li>Caveat: inferred period counts runs, not misses</li>
 					</ul>
 
 					<aside class="notes">A possibility, not implemented. find_data_type_insn() already walks instruction by instruction from the scope start to the sample, so collecting the other memory operands on the way costs little; the stretch from the sample to the first branch after it would be a small extension.</aside>
@@ -711,7 +711,7 @@ struct bpf_core_relo {
 						<li>perf: collect inferred accesses in replay</li>
 						<li>perf: determine the load/store direction in one place</li>
 						<li>pahole: flag inferred, use for co-access</li>
-						<li>Docs: inferred means coverage, not cost</li>
+						<li>Docs: inferred period is runs, not event cost</li>
 						<li>Compilers: per-instruction access records</li>
 						<li>perf test: cross-check both type resolvers</li>
 					</ul>
