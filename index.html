@@ -546,7 +546,7 @@ struct sock {
 					<h2>Data-type profiling: many hands</h2>
 					<br>
 					<ul>
-						<li><a href="https://git.kernel.org/torvalds/linux/c/ddeac198e1990715a162bf14faeab6000376ed1e">AMD IBS in perf mem: Ravi Bangoria (AMD)</a></li>
+						<li><a href="https://git.kernel.org/torvalds/linux/c/f7b58cbdb3ff36eba8622e67eee66c10dd1c9995">AMD IBS in perf mem/c2c: Ravi Bangoria</a>, 2022</li>
 						<li><a href="https://git.kernel.org/torvalds/linux/c/88444952bdfe27fcc91b1c499a0f77675db592a9">PowerPC: Athira Rajeev (IBM), merged 2024</a></li>
 						<li><a href="https://lore.kernel.org/linux-perf-users/cover.1789521520.git.wutengda@huaweicloud.com/">arm64 SPE: Tengda Wu, Li Huafei</a>: v7.4 + review</li>
 						<li><a href="https://lore.kernel.org/linux-perf-users/20260919063745.48444-1-namhyung@kernel.org/">Flexible arrays: Namhyung, v5 in review</a></li>
@@ -554,6 +554,7 @@ struct sock {
 						<li>shared base: annotate-data, DWARF, BTF</li>
 					</ul>
 
+					<aside class="notes">AMD: Ravi Bangoria (AMD) posted perf mem/c2c support for AMD, based on the IBS Op PMU, in 2022, alongside the Zen 4 IBS extensions (DataSrc and L3 miss filtering). Zen 5 added load latency filtering, with perf mem/c2c ldlat support in a Dec 2024 series; Zen 6 tool enhancements were posted in 2026. The linked commit (f7b58cbd, Oct 2022) wires ibs_op// in as the mem-ldst event for perf mem/c2c on AMD; perf c2c is not supported on Zen 3. The END slide links ddeac198 (Apr 2023), which refactors how perf mem prints the data source, with a before/after table of what IBS reports: L1/L2/L3 hits, local vs remote RAM, remote caches by hop count. Namhyung also had IBS kernel patches in tip around late 2024.</aside>
 				</section>
 				<section>
 					<h2>What compilers give us today</h2>
@@ -730,6 +731,7 @@ struct bpf_core_relo {
 						<li><a href="https://git.kernel.org/torvalds/linux/c/88444952bdfe27fcc91b1c499a0f77675db592a9">PowerPC data-type profiling (Athira Rajeev)</a></li>
 						<li><a href="https://lore.kernel.org/linux-perf-users/20260919063745.48444-1-namhyung@kernel.org/">Flexible arrays (Namhyung Kim, v5)</a></li>
 						<li><a href="https://git.kernel.org/torvalds/linux/c/16e113d46d29eb8bf13a5a58de6fb38f24f1aec2">perf c2c function view (Jiebin Sun)</a></li>
+						<li><a href="https://git.kernel.org/torvalds/linux/c/ddeac198e1990715a162bf14faeab6000376ed1e">What perf mem reports with AMD IBS (Ravi Bangoria)</a></li>
 						<li><a href="https://discourse.llvm.org/t/rfc-dynamic-type-profiling-and-optimizations-in-llvm/74600">LLVM RFC: dynamic type profiling (2023)</a></li>
 						<li>acme@redhat.com</li>
 						<li><a href="https://bsky.app/profile/acmel.bsky.social">https://bsky.app/profile/acmel.bsky.social</a></li>
