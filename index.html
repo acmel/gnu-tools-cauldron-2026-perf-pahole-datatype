@@ -358,6 +358,7 @@ movl 0xf4(%rbx), %edx   ; +244 sk_rcvbuf  &lt;- SAMPLED (PEBS/IBS here)
 jne  .slow_path         ; first branch: stop here
 </code></pre>
 
+					<aside class="notes">Prior art: TypeCraft (OSDI 26, section 7.1) already looks at the adjacent memory instructions in the same function as each sampled PC to find other fields of the same type accessed there, and uses that, weighted by hotness, as field affinity for reordering. The idea here takes that into perf proper, during the instruction replay, and adds the instance (data address) when the base register is the same.</aside>
 					<p><small><i>preliminary, unpublished</i></small></p>
 				</section>
 				<section>
@@ -535,9 +536,11 @@ struct sock {
 						<li><a href="https://git.kernel.org/torvalds/linux/c/b8fea7af0e40feb6d9cbbd60b66ff0ec265e868f">Allocate cfs_tg_state with percpu allocator</a></li>
 						<li><a href="https://git.kernel.org/torvalds/linux/c/89e1f67186baca353b68115bb98bd0bfed9f80c8">Remove task_group-&gt;se pointer array</a></li>
 						<li>Merged in v7.0 (Zecheng Li, Google/NCSU)</li>
-						<li>Result: LLC misses -33%, stress-ng +8.8%</li>
+						<li>Kernel LLC misses -33% (schbench), after reorder</li>
+						<li>0-day robot: stress-ng session ops/s +8.8%</li>
 					</ul>
 
+					<aside class="notes">From the TypeCraft paper (OSDI 26, section 7.2), on a 24-core Intel w7-2495X, Linux 6.17: embedding sched_entity in cfs_rq plus per-CPU allocation of cfs_rq cuts kernel LLC misses a further 33% on their cfs_rq microbenchmark (schbench, 1024 cgroups, 1024 tasks), on top of the field reordering. Embedding alone regressed: LLC misses up over 50% from 1024-byte slab alignment causing conflict misses, fixed by the per-CPU allocator. The Intel kernel test robot reported +8.8% on stress-ng.session.ops_per_sec. Earlier steps: rq reorder -5.1% kernel cycles (960-task sleep loop microbenchmark), cfs_rq reorder -26.4% kernel LLC misses (schbench). MySQL sysbench OLTP read-only: LLC misses down up to 14.9% (16 servers), peak TPS +1.8% (64 servers).</aside>
 				</section>
 				<section>
 					<h2>Data-type profiling: many hands</h2>
