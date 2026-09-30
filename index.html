@@ -635,11 +635,11 @@ struct bpf_core_relo {
 					<ul>
 						<li>Encoding: BTF like CO-RE, or DWARF? Either works</li>
 						<li>Size: separate, strippable section, like BTF</li>
-						<li>Inlining: records describe the final instructions</li>
 						<li>GCC: is MEM_EXPR at final enough for records?</li>
 						<li>One format from GCC and LLVM, opt-in via a flag</li>
 					</ul>
 
+					<aside class="notes">If someone asks about inlining: point to the work by Alan Maguire on inlines in pahole, about to be merged. The kernel side does not care much which encoding wins, as long as both compilers agree and the section can be stripped or shipped separately like BTF.</aside>
 				</section>
 				<section>
 					<h2>Work items</h2>
