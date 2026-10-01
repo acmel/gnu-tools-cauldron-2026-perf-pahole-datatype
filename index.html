@@ -409,6 +409,7 @@ jne  .slow_path         ; first branch: stop here
 						<li>One perf.data: aggregate JSON, per-sample <a href="https://babeltrace.org/">CTF</a></li>
 						<li>Same pahole analysis consumes both</li>
 					</ul>
+					<p class="left">Before the fix: CTF took the direction from data_src, wrongly</p>
 					<pre class="small"><code class="language-plaintext" data-trim>
             CTF (per-sample)              JSON (aggregate)
 saddr   36489 R +   1 W = 36490      36490 R, 0 W
@@ -417,9 +418,10 @@ daddr   36921 R +   8 W = 36929      36929 R, 0 W
 					<ul>
 						<li>Nine samples out of 287,278 disagree</li>
 						<li>Same samples, opposite direction</li>
+						<li>After the fix: identical counts (net_conn)</li>
 					</ul>
 
-					<aside class="notes">tests/perf_dt_pair.sh cross-validates the two transports. i7-14700K, PEBS, 287,278 resolved samples in 22 members; the arithmetic is exact: the same nine samples counted with opposite direction. With direction now taken from the instruction in both producers, the net_conn run later in the deck shows identical per-member counts from JSON and CTF.</aside>
+					<aside class="notes">tests/perf_dt_pair.sh cross-validates the two transports. i7-14700K, PEBS, 287,278 resolved samples in 22 members; the arithmetic is exact: the same nine samples counted with opposite direction, and CTF was the wrong side, since it trusted the data_src the kernel reported. With direction now taken from the instruction in both producers, the net_conn run later in the deck shows identical per-member counts from JSON and CTF.</aside>
 					<p><small><i>preliminary, unpublished</i></small></p>
 				</section>
 				<section>
