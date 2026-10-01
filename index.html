@@ -179,92 +179,130 @@ pahole --perf-data-type=ctf.dir vmlinux
 					<aside class="notes">The kernel has full debug info here: everything else in it resolves. Installing glibc and findutils debuginfo did not change the userspace unknowns either. So this is the limit of reconstruction, not missing debug info.</aside>
 				</section>
 				<section>
-					<h2>Drilling down: struct folio</h2>
+					<h2>Drilling down: struct net_conn</h2>
 					<br>
-					<pre class="small"><code class="language-plaintext" data-trim data-line-numbers="|7-8">
-# perf annotate --stdio --data-type
-Annotate type: &#x27;struct folio&#x27; in [kernel.kallsyms] (11467 samples):
- Percent     offset       size  field
-  100.00          0      0x100  struct folio     {
-   93.62          0       0x40      union        {
-   93.62          0       0x40          struct   {
-   86.66          0        0x8              memdesc_flags_t     flags {
-   86.66          0        0x8                  long unsigned int       f;
-                                            };
-    0.00        0x8       0x10              union        {
-    0.00        0x8       0x10                  struct list_head        lru {
+					<pre class="small"><code class="language-plaintext" data-trim data-line-numbers="|6|7|8">
+# perf mem record -- perf test -w false_sharing
+# perf report -s type,typecln -H --group --stdio
+# Samples: 71K of events &#x27;cpu/mem-loads,ldlat=30/P, cpu/mem-stores/P&#x27;
+#            Overhead  Data Type / Data Type Cacheline
+    88.14%  32.83%     struct net_conn
+       58.96%  16.09%     struct net_conn: cache-line 0
+       29.18%   0.00%     struct net_conn: cache-line 2
+        0.00%  16.74%     struct net_conn: cache-line 1
     ...
 </code></pre>
+					<ul>
+						<li>--group: loads left, stores right</li>
+						<li>cache-line 0: loads and stores</li>
+						<li>cache-line 1: stores; cache-line 2: loads</li>
+					</ul>
 
-					<aside class="notes">Same find / run. Almost all folio accesses hit the flags word: folio_test_*() and friends.</aside>
+					<aside class="notes">perf's own false_sharing workload, told as a TCP connection: struct net_conn, 64-byte aligned. Cacheline 0: identity + rx counters, the false-sharing line. Cacheline 1: tx + congestion control, the true-sharing control. Cacheline 2: connection config, shared reads only. Built to collide, fails closed: skips, never a false negative. Trimmed: other types and the (unknown) entry are left out here, to be looked at later.</aside>
 				</section>
 				<section>
-					<h2>Same type, static view: pahole</h2>
+					<h2>Cache-line 0: readers and writers</h2>
 					<br>
-					<pre class="small"><code class="language-plaintext" data-trim data-line-numbers="|5|17-19">
-$ pahole folio
-struct folio {
-	union {
-		struct {
-			memdesc_flags_t flags;           /*     0     8 */
-			union {
-				struct list_head lru;    /*     8    16 */
-				...
-			};                               /*     8    16 */
-			struct address_space * mapping;  /*    24     8 */
-			...
-			atomic_t   _refcount;            /*    52     4 */
-			long unsigned int memcg_data;    /*    56     8 */
-		};                                       /*     0    64 */
-		struct page        page;                 /*     0    64 */
-	};                                               /*     0    64 */
+					<pre class="small"><code class="language-plaintext" data-trim data-line-numbers="|3-8|9-12">
+# perf report -s type,typecln,typeoff -H --group --stdio
+       58.96%  16.09%        struct net_conn: cache-line 0
+          10.34%   0.00%        struct net_conn +0xa (dport)
+           9.93%   0.00%        struct net_conn +0x8 (sport)
+           9.89%   0.00%        struct net_conn +0xd (protocol)
+           9.79%   0.00%        struct net_conn +0xc (state)
+           9.61%   0.00%        struct net_conn +0x4 (daddr)
+           9.41%   0.00%        struct net_conn +0 (saddr)
+           0.00%  11.52%        struct net_conn +0x10 (bytes_rx)
+           0.00%   0.59%        struct net_conn +0x18 (packets_rx)
+           0.00%   2.33%        struct net_conn +0x20 (rx_queue)
+           0.00%   1.65%        struct net_conn +0x3c (last_ack)
+</code></pre>
+					<ul>
+						<li>Identity fields: loaded only</li>
+						<li>rx counters: stored only, same cacheline</li>
+						<li>Readers and writers on one line: false sharing</li>
+					</ul>
+
+					<aside class="notes">Same perf.data. Cache-line 1 is the opposite, stores only (bytes_tx, packets_tx, rtt_us, cwnd, ssthresh): true sharing, the control. Cache-line 2 is loads only (mss, snd_wscale, rcv_wscale, keepalive_int, mark, priority): shared reads, nothing to fix.</aside>
+				</section>
+				<section>
+					<h2>Static view: pahole</h2>
+					<br>
+					<pre class="small"><code class="language-plaintext" data-trim data-line-numbers="|3-8|9-12|13-16">
+$ pahole -C net_conn ~/bin/perf
+struct net_conn {
+	uint32_t                   saddr;                /*     0     4 */
+	uint32_t                   daddr;                /*     4     4 */
+	uint16_t                   sport;                /*     8     2 */
+	uint16_t                   dport;                /*    10     2 */
+	uint8_t                    state;                /*    12     1 */
+	uint8_t                    protocol;             /*    13     1 */
+	uint64_t                   bytes_rx;             /*    16     8 */
+	uint64_t                   packets_rx;           /*    24     8 */
+	uint32_t                   rx_queue;             /*    32     4 */
+	uint32_t                   last_ack;             /*    60     4 */
 	/* --- cacheline 1 boundary (64 bytes) --- */
 	...
-	/* size: 256, cachelines: 4, members: 4 */
-};
+	/* size: 192, cachelines: 3, members: 26 */
+} __attribute__((__aligned__(64)));
 </code></pre>
+					<ul>
+						<li>Where each member sits, cacheline by cacheline</li>
+						<li>No idea which members are hot</li>
+					</ul>
 
-					<aside class="notes">Trimmed from the full pahole folio output: the first cacheline, where 93.62% of the folio accesses land, with flags at offset 0 taking 86.66%. The other three cachelines are unions with struct page for the tail pages. pahole shows where each member sits, but not which members are hot.</aside>
+					<aside class="notes">Trimmed to cacheline 0, padding left out (__pad0 at 14, __pad1[24] at 36): the identity fields (saddr..protocol) and the rx counters (bytes_rx, packets_rx, rx_queue, last_ack) share the same 64-byte line. Cacheline 1 holds the tx and congestion fields (bytes_tx, packets_tx, cwnd, ssthresh, rtt_us, retrans), cacheline 2 the configuration (mss, snd_wscale, rcv_wscale, keepalive_int, mark, priority). 192 bytes, 3 cachelines, 26 members, aligned to 64. pahole shows where each member sits, but not which members are hot.</aside>
 				</section>
 				<section>
-					<h2>pahole + JSON: profile on the layout</h2>
+					<h2>pahole + JSON: the overlay</h2>
 					<br>
-					<pre class="small"><code class="language-plaintext" data-trim>
-$ pahole --perf-data-type=profile.json vmlinux
-struct task_struct {
-      unsigned int  __state;  /* 24  4 | 16.4% R:87.6K W:8.8K */
-      ...
-      /* perf data-type profile (cachelines of 64 bytes):
-           cacheline 0 [0-63]:
-             +0    __rb_parent_color  sz=8  nr_reads=6000
-          &gt;&gt;&gt; FALSE SHARING: cacheline 5: owner / count
-      */
-};
-(trimmed sketch, numbers from the i7 capture)
+					<pre class="small"><code class="language-plaintext" data-trim data-line-numbers="|3-8|9-12">
+$ pahole --perf-data-type=profile.json -C net_conn ~/bin/perf
+struct net_conn {
+	uint32_t                   saddr;                /*     0     4 |   8.7% R:3.1K */
+	uint32_t                   daddr;                /*     4     4 |   9.1% R:3.2K */
+	uint16_t                   sport;                /*     8     2 |   9.3% R:3.3K */
+	uint16_t                   dport;                /*    10     2 |   9.7% R:3.4K */
+	uint8_t                    state;                /*    12     1 |   9.2% R:3.3K */
+	uint8_t                    protocol;             /*    13     1 |   9.2% R:3.2K */
+	uint64_t                   bytes_rx;             /*    16     8 |   7.6% R:33 W:2.7K */
+	uint64_t                   packets_rx;           /*    24     8 |   0.4% R:19 W:134 */
+	uint32_t                   rx_queue;             /*    32     4 |   1.5% W:537 */
+	uint32_t                   last_ack;             /*    60     4 |   1.1% W:379 */
+	...
 </code></pre>
 					<ul>
 						<li>Loads (R) and stores (W) per member</li>
-						<li>Per cacheline summary, with false sharing flagged</li>
+						<li>Per cacheline summary: counts and periods</li>
 					</ul>
 
-					<aside class="notes">i7 capture sketch. For the talk, replace with the find / run: perf report -s type --data-type-json=profile.json, then pahole --perf-data-type=profile.json -C folio vmlinux.</aside>
+					<aside class="notes">Produced by perf report -s type --data-type-json=profile.json on the same perf.data (perf mem record -- perf test -w false_sharing, 71250 samples). Trimmed to cacheline 0, padding left out; cachelines 1 and 2 are annotated the same way (tx fields written, config fields read). Percentages are each member's share of the 35298 samples resolved to 22 net_conn members. After the struct, pahole prints a per-cacheline summary: nr_reads, period_reads, nr_writes, period_writes per member, with heat thresholds (hot >= 5.0%, warm > 0.5%) and cachelines without hits omitted. Cacheline 0 shows it: identity fields read only, rx counters written. False sharing verdicts need per-sample CPU and time: that is the CTF slide next.</aside>
 					<p><small><i>preliminary, unpublished</i></small></p>
 				</section>
 				<section>
-					<h2>pahole + perf CTF: per sample</h2>
+					<h2>pahole + CTF: false sharing</h2>
 					<br>
-					<pre class="small"><code class="language-plaintext" data-trim>
-$ perf data convert --to-ctf=ctf.dir --data-type -i perf.data
-$ pahole --perf-data-type=ctf.dir -C folio vmlinux
-[paste: folio with per-sample verdicts]
+					<pre class="small"><code class="language-plaintext" data-trim data-line-numbers="|1-3|5|10">
+$ perf data convert --to-ctf=./ctf.dir --data-type -i perf.data
+[ perf data convert: Resolved the data type of 36130 samples in 5 DSOs ]
+[ perf data convert: Skipped 166 samples whose data address is not ... ]
+
+$ pahole -F dwarf --perf-data-type=./ctf.dir -C net_conn ~/bin/perf
+struct net_conn {
+	...
+	   cacheline 0 [0-63]:
+	     ...
+	   &gt;&gt;&gt; FALSE SHARING: cacheline 0: saddr / bytes_rx
+	...
+} __attribute__((__aligned__(64)));
 </code></pre>
 					<ul>
 						<li>Each <a href="https://diamon.org/ctf/">CTF</a> sample keeps CPU, time, data address</li>
 						<li>Same instance, other CPU, a write, within 10us</li>
-						<li>Co-accessed members: GROUP (true sharing) hints</li>
-						<li>PEBS/IBS addr + CPU: CONFIRMED; -d: SUSPECTED</li>
+						<li>Per-member counts match the JSON path</li>
 					</ul>
 
+					<aside class="notes">Same perf.data as the JSON slide (perf mem record -- perf test -w false_sharing, 71250 samples). The converter resolved 36130 samples in 5 DSOs and skipped 166 whose data address is not the one the recorded IP's PC-relative operand accesses (see perf-data(1)): the same operand check as on the code patching slide. pahole prints the same per-member annotations and per-cacheline summary as with JSON (identical counts: the two transports agree), plus the verdicts that need per-sample CPU and time: FALSE SHARING on cacheline 0, saddr (read) against bytes_rx (written), the line the fixture was built to collide on. It also prints 70 GROUP (true sharing) hints, many pairing fields across cachelines; preliminary: that heuristic is noisy and needs improvement (listed in Work items), so they are left off the slide.</aside>
 					<p><small><i>preliminary, unpublished</i></small></p>
 				</section>
 				<section>
@@ -282,7 +320,7 @@ $ pahole --perf-data-type=ctf.dir -C folio vmlinux
 					<p><small><i>preliminary, unpublished</i></small></p>
 				</section>
 				<section>
-					<h2>Where perf's disassembly came from</h2>
+					<h2>Where the disassembly came from</h2>
 					<br>
 					<ul>
 						<li><a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/tools/perf/Documentation/perf-annotate.txt">perf annotate</a>: parse objdump output</li>
@@ -330,7 +368,7 @@ after:  mrs [8] sp_el0 -&gt; reg0 type=&#x27;struct task_struct*&#x27;
 					<aside class="notes">From patch 26/26 (mrs sp_el0 for current). The same pattern shows in the adrp+add globals and __per_cpu_offset percpu patches: every architecture has to teach perf its idioms, one by one. Patch 20 fixes a stale stack state bug in x86 found along the way: each port improves the others. With compiler access records, none of these idioms would need teaching.</aside>
 				</section>
 				<section>
-					<h2>Idea: "sampling" unsampled members</h2>
+					<h2>Idea: "sampling" more members</h2>
 					<br>
 					<ul>
 						<li>Today: only the sampled operand counts</li>
@@ -350,7 +388,7 @@ jne  .slow_path         ; first branch: stop here
 					<p><small><i>preliminary, unpublished</i></small></p>
 				</section>
 				<section>
-					<h2>Inferred accesses: type vs instance</h2>
+					<h2>Inferred: type vs instance</h2>
 					<br>
 					<ul>
 						<li>Same base register, unchanged: same instance</li>
@@ -381,7 +419,7 @@ daddr   36921 R +   8 W = 36929      36929 R, 0 W
 						<li>Same samples, opposite direction</li>
 					</ul>
 
-					<aside class="notes">tests/perf_dt_pair.sh cross-validates the two transports. i7-14700K, PEBS, 287,278 resolved samples in 22 members; the arithmetic is exact: the same nine samples counted with opposite direction.</aside>
+					<aside class="notes">tests/perf_dt_pair.sh cross-validates the two transports. i7-14700K, PEBS, 287,278 resolved samples in 22 members; the arithmetic is exact: the same nine samples counted with opposite direction. With direction now taken from the instruction in both producers, the net_conn run later in the deck shows identical per-member counts from JSON and CTF.</aside>
 					<p><small><i>preliminary, unpublished</i></small></p>
 				</section>
 				<section>
@@ -415,26 +453,6 @@ daddr   36921 R +   8 W = 36929      36929 R, 0 W
 					<p><small><i>preliminary, unpublished</i></small></p>
 				</section>
 				<section>
-					<h2>False sharing, end to end</h2>
-					<br>
-					<pre class="small"><code class="language-plaintext" data-trim>
-perf mem record --sample-cpu -o fs.data -- \
-    perf test -w false_sharing &lt;s&gt; &lt;nreaders&gt;
-perf data convert --to-ctf --data-type -i fs.data --force fs.ctf
-pahole -F dwarf --perf-data-type=fs.ctf -C net_conn $(command -v perf)
-
-&gt;&gt;&gt; FALSE SHARING: cacheline 0: saddr / packets_rx
-&gt;&gt;&gt; GROUP (true sharing): mss / snd_wscale -- consider same cacheline
-</code></pre>
-					<ul>
-						<li>Fixture: net_conn, built to collide</li>
-						<li>Same instance, other CPU, a write, within 10us</li>
-					</ul>
-
-					<aside class="notes">perf's own false_sharing workload, told as a TCP connection: struct net_conn, 64-byte aligned. Cacheline 0: identity + rx counters, the false-sharing line. Cacheline 1: tx + congestion control, the true-sharing control. Cacheline 2: connection config, shared reads only. Built to collide, fails closed: skips, never a false negative. Lines 1 and 2 stay silent.</aside>
-					<p><small><i>preliminary, unpublished</i></small></p>
-				</section>
-				<section>
 					<h2>What layout changes buy</h2>
 					<br>
 					<ul>
@@ -454,12 +472,12 @@ pahole -F dwarf --perf-data-type=fs.ctf -C net_conn $(command -v perf)
 						<li><a href="https://git.kernel.org/torvalds/linux/c/f7b58cbdb3ff36eba8622e67eee66c10dd1c9995">AMD IBS in perf mem/c2c: Ravi Bangoria</a>, 2022</li>
 						<li><a href="https://git.kernel.org/torvalds/linux/c/88444952bdfe27fcc91b1c499a0f77675db592a9">PowerPC: Athira Rajeev (IBM), merged 2024</a></li>
 						<li><a href="https://lore.kernel.org/linux-perf-users/cover.1789521520.git.wutengda@huaweicloud.com/">arm64 SPE: Tengda Wu, Li Huafei</a>: v7.4 + review</li>
-						<li><a href="https://lore.kernel.org/linux-perf-users/20260919063745.48444-1-namhyung@kernel.org/">Flexible arrays: Namhyung, v5 in review</a></li>
+						<li>Review: <a href="https://lore.kernel.org/linux-perf-users/20260919063745.48444-1-namhyung@kernel.org/">flex arrays</a> (Namhyung), <a href="https://lore.kernel.org/linux-perf-users/20260930210038.196928-1-yzhao62@ncsu.edu/">C++</a> (Yanbo Zhao)</li>
 						<li><a href="https://git.kernel.org/torvalds/linux/c/16e113d46d29eb8bf13a5a58de6fb38f24f1aec2">c2c function view: Jiebin Sun (Intel)</a></li>
 						<li>shared base: annotate-data, DWARF, BTF</li>
 					</ul>
 
-					<aside class="notes">AMD: Ravi Bangoria (AMD) posted perf mem/c2c support for AMD, based on the IBS Op PMU, in 2022, alongside the Zen 4 IBS extensions (DataSrc and L3 miss filtering). Zen 5 added load latency filtering, with perf mem/c2c ldlat support in a Dec 2024 series; Zen 6 tool enhancements were posted in 2026. The linked commit (f7b58cbd, Oct 2022) wires ibs_op// in as the mem-ldst event for perf mem/c2c on AMD; perf c2c is not supported on Zen 3. The END slide links ddeac198 (Apr 2023), which refactors how perf mem prints the data source, with a before/after table of what IBS reports: L1/L2/L3 hits, local vs remote RAM, remote caches by hop count. Namhyung also had IBS kernel patches in tip around late 2024.</aside>
+					<aside class="notes">In review: flexible array members (Namhyung Kim, v5) and C++ classes and virtual calls (Yanbo Zhao, NCSU, v2, 30 Sep 2026): base class subobjects via DW_TAG_inheritance, including empty bases, tail padding reuse and virtual bases, and the return type of virtual calls through the vtable, tracked in x86 instruction tracking for call *N(%reg) and call *%reg. C++ support is listed as future work in the TypeCraft paper. AMD: Ravi Bangoria (AMD) posted perf mem/c2c support for AMD, based on the IBS Op PMU, in 2022, alongside the Zen 4 IBS extensions (DataSrc and L3 miss filtering). Zen 5 added load latency filtering, with perf mem/c2c ldlat support in a Dec 2024 series; Zen 6 tool enhancements were posted in 2026. The linked commit (f7b58cbd, Oct 2022) wires ibs_op// in as the mem-ldst event for perf mem/c2c on AMD; perf c2c is not supported on Zen 3. The END slide links ddeac198 (Apr 2023), which refactors how perf mem prints the data source, with a before/after table of what IBS reports: L1/L2/L3 hits, local vs remote RAM, remote caches by hop count. Namhyung also had IBS kernel patches in tip around late 2024.</aside>
 				</section>
 				<section>
 					<h2>What compilers give us today</h2>
@@ -559,7 +577,7 @@ total 8095, ok 5910 (73.0%), bad 2185 (27.0%)
 						<li>no_mem_ops: the parser saw no memory operand</li>
 						<li>no_var: no variable, even after replay</li>
 						<li>no_cuinfo: no DWARF: hand-written asm</li>
-						<li>insn_track: 719 of 5910 needed replay</li>
+						<li>insn_track: 719 of 5910 found only by replay</li>
 					</ul>
 
 					<aside class="notes">Counts are resolution attempts, not samples, so they do not match the 17.95%/27.49% sample-weighted numbers; check what exactly total counts. Access records would address no_typeinfo, no_var and no_mem_ops (the record says it is a memory access). no_cuinfo is hand-written asm: out of reach for records too, like the copy routines on the coverage slide. bad_offset and no_sym/no_insn/no_dbginfo/invalid_size folded into two lines to fit.</aside>
@@ -586,7 +604,7 @@ total 8095, ok 5910 (73.0%), bad 2185 (27.0%)
 					<aside class="notes">One record per memory-accessing instruction, as emitted: instruction address, base type (struct or union, referenced as a BTF or DWARF type), member path through nested types plus offset, access kind (load, store, RMW) and size, and an explicit unknown when the compiler cannot say. Asking for records must not change the generated code.</aside>
 				</section>
 				<section>
-					<h2>Precedent: BPF <a href="https://nakryiko.com/posts/bpf-portability-and-co-re/">CO-RE</a> already does this</h2>
+					<h2>Precedent: BPF <a href="https://nakryiko.com/posts/bpf-portability-and-co-re/">CO-RE</a></h2>
 					<br>
 					<pre><code class="language-plaintext" data-trim>
 /* .BTF.ext field relocation */
@@ -605,7 +623,7 @@ struct bpf_core_relo {
 
 				</section>
 				<section>
-					<h2>Coverage: be explicit about the gaps</h2>
+					<h2>Coverage: explicit gaps</h2>
 					<br>
 					<ul>
 						<li>Inline asm memory operands: atomics, locks</li>
@@ -647,13 +665,27 @@ struct bpf_core_relo {
 					<ul>
 						<li>perf: collect inferred accesses in replay</li>
 						<li>perf: determine the load/store direction in one place</li>
-						<li>pahole: flag inferred, use for co-access</li>
+						<li>pahole: flag inferred; less noisy GROUP hints</li>
 						<li>Compilers: per-instruction access records</li>
 						<li>Experiment: records from GCC <a href="https://gcc.gnu.org/onlinedocs/gcc/Developer-Options.html">-dP</a> asm dumps</li>
 						<li>perf test: cross-check both type resolvers</li>
 					</ul>
 
 					<aside class="notes">Also to document: inferred entries carry the sampled instruction's period as an execution count, not as event cost (e.g. not as ldlat-qualified loads or latency).</aside>
+				</section>
+				<section>
+					<h2>Takeaways</h2>
+					<br>
+					<ul>
+						<li>Data-type profiling works today, on several archs</li>
+						<li>Paired with pahole: hot fields, false sharing</li>
+						<li>Disassembly-based: useful, but has a ceiling</li>
+						<li>GCC keeps the field at final, even for the kernel</li>
+						<li>Ask: put access records in the binary</li>
+						<li>perf will cross-check them against disassembly</li>
+					</ul>
+
+					<aside class="notes">The one slide to leave up during questions if there is no other. Clang has the same information only as TBAA, which -fno-strict-aliasing removes.</aside>
 				</section>
 				<section>
 					<h2>THE END</h2>
@@ -665,6 +697,7 @@ struct bpf_core_relo {
 						<li><a href="https://lore.kernel.org/linux-perf-users/cover.1789521520.git.wutengda@huaweicloud.com/">arm64 data-type profiling (Tengda Wu, v6)</a></li>
 						<li><a href="https://git.kernel.org/torvalds/linux/c/88444952bdfe27fcc91b1c499a0f77675db592a9">PowerPC data-type profiling (Athira Rajeev)</a></li>
 						<li><a href="https://lore.kernel.org/linux-perf-users/20260919063745.48444-1-namhyung@kernel.org/">Flexible arrays (Namhyung Kim, v5)</a></li>
+						<li><a href="https://lore.kernel.org/linux-perf-users/20260930210038.196928-1-yzhao62@ncsu.edu/">Data-type profiling for C++ (Yanbo Zhao, v2)</a></li>
 						<li><a href="https://git.kernel.org/torvalds/linux/c/16e113d46d29eb8bf13a5a58de6fb38f24f1aec2">perf c2c function view (Jiebin Sun)</a></li>
 						<li><a href="https://git.kernel.org/torvalds/linux/c/ddeac198e1990715a162bf14faeab6000376ed1e">What perf mem reports with AMD IBS (Ravi Bangoria)</a></li>
 						<li><a href="https://discourse.llvm.org/t/rfc-dynamic-type-profiling-and-optimizations-in-llvm/74600">LLVM RFC: dynamic type profiling (2023)</a></li>
