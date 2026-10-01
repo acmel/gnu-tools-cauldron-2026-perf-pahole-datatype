@@ -311,7 +311,7 @@ struct net_conn {
 					<ul>
 						<li>Hot and cold members, per cacheline</li>
 						<li>Cold members in hot cachelines: move them out</li>
-						<li>False sharing: confirmed by hardware, not guessed</li>
+						<li>False sharing, from hardware samples</li>
 						<li>Members used together: keep them on one cacheline</li>
 						<li>--reorganize with evidence, not just padding</li>
 						<li>All of it needs the right member resolved</li>
@@ -368,12 +368,12 @@ after:  mrs [8] sp_el0 -&gt; reg0 type=&#x27;struct task_struct*&#x27;
 					<aside class="notes">From patch 26/26 (mrs sp_el0 for current). The same pattern shows in the adrp+add globals and __per_cpu_offset percpu patches: every architecture has to teach perf its idioms, one by one. Patch 20 fixes a stale stack state bug in x86 found along the way: each port improves the others. With compiler access records, none of these idioms would need teaching.</aside>
 				</section>
 				<section>
-					<h2>Idea: "sampling" more members</h2>
+					<h2>Next: "sampling" more members</h2>
 					<br>
 					<ul>
 						<li>Today: only the sampled operand counts</li>
 						<li>"No samples" is not "never accessed"</li>
-						<li>Idea, not implemented: walk the whole block</li>
+						<li>Not implemented yet: walk the whole block</li>
 						<li>Entry to first branch after the sample: all ran</li>
 					</ul>
 					<pre><code class="language-plaintext" data-trim>
@@ -585,7 +585,7 @@ total 8095, ok 5910 (73.0%), bad 2185 (27.0%)
 					<aside class="notes">Counts are resolution attempts, not samples, so they do not match the 17.95%/27.49% sample-weighted numbers; check what exactly total counts. Access records would address no_typeinfo, no_var and no_mem_ops (the record says it is a memory access). no_cuinfo is hand-written asm: out of reach for records too, like the copy routines on the coverage slide. bad_offset and no_sym/no_insn/no_dbginfo/invalid_size folded into two lines to fit.</aside>
 				</section>
 				<section>
-					<h2>The source names the field.<br>The profiler rebuilds a guess.</h2>
+					<h2>The source names the field.<br>The profiler can do just that much.</h2>
 					<br>
 					<p>In the source, every field access names its struct and field. We would like to understand how much of that could reach the binary.</p>
 
@@ -631,7 +631,6 @@ struct bpf_core_relo {
 						<li>Inline asm memory operands: atomics, locks</li>
 						<li>memcpy, copy_user: perf could use the caller</li>
 						<li>One insn, several fields: range or unknown</li>
-						<li>Honest gaps beat confident guesses</li>
 					</ul>
 
 				</section>
@@ -643,7 +642,7 @@ struct bpf_core_relo {
 						<li>Disassembly: when absent or not enough</li>
 						<li>perf test: resolve the same samples both ways</li>
 						<li>Differences fixed on whichever side is wrong</li>
-						<li>Only one can do it? Suppress, compare the rest</li>
+						<li>Only one can do it: suppress, compare the rest</li>
 						<li>Like pahole's <a href="https://git.kernel.org/pub/scm/devel/pahole/pahole.git/tree/btfdiff">btfdiff</a>: BTF vs DWARF</li>
 					</ul>
 
@@ -669,7 +668,7 @@ struct bpf_core_relo {
 						<li>perf: determine the load/store direction in one place</li>
 						<li>pahole: flag inferred; less noisy GROUP hints</li>
 						<li>Compilers: per-instruction access records</li>
-						<li>Experiment: records from GCC <a href="https://gcc.gnu.org/onlinedocs/gcc/Developer-Options.html">-dP</a> asm dumps</li>
+						<li>Prototype: records from GCC <a href="https://gcc.gnu.org/onlinedocs/gcc/Developer-Options.html">-dP</a> asm dumps</li>
 						<li>perf test: cross-check both type resolvers</li>
 					</ul>
 
