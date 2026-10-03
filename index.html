@@ -340,7 +340,7 @@ struct net_conn {
 						<li>Sample IP → instruction → memory operand</li>
 						<li>PC-relative or absolute: the global variable</li>
 						<li>Else: <a href="https://dwarfstd.org/dwarf5std.html">DWARF</a> variable in that register, by scope</li>
-						<li>Else: replay basic blocks up to the sample</li>
+						<li>Else: <a href="#/when-replay">replay</a> basic blocks up to the sample</li>
 						<li>x86 and PowerPC; arm64 in review</li>
 						<li>DWARF variables seed register and stack types</li>
 					</ul>
@@ -575,14 +575,14 @@ total 8095, ok 5910 (73.0%), bad 2185 (27.0%)
        719 : insn_track
 </code></pre>
 					<ul>
-						<li>no_typeinfo: register found, no pointer type</li>
+						<li><a href="#/no-typeinfo">no_typeinfo</a>: replay lost the type, or void * / integer</li>
 						<li>no_mem_ops: the parser saw no memory operand</li>
 						<li>no_var: no variable, even after replay</li>
 						<li>no_cuinfo: no DWARF: hand-written asm</li>
-						<li>insn_track: 719 of 5910 found only by replay</li>
+						<li>insn_track: 719 of 5910 found only by <a href="#/when-replay">replay</a></li>
 					</ul>
 
-					<aside class="notes">Counts are resolution attempts, not samples, so they do not match the 17.95%/27.49% sample-weighted numbers; check what exactly total counts. Access records would address no_typeinfo, no_var and no_mem_ops (the record says it is a memory access). no_cuinfo is hand-written asm: out of reach for records too, like the copy routines on the coverage slide. bad_offset and no_sym/no_insn/no_dbginfo/invalid_size folded into two lines to fit.</aside>
+					<aside class="notes">no_typeinfo counts two replay outcomes (PERF_TMR_NO_TYPE and PERF_TMR_NO_POINTER): DWARF is there, the direct lookup found no variable in the base register, the replay reached the sample but the register or stack slot had no usable type. Either the replay lost track (a call clobbered caller-saved registers, non-constant arithmetic such as masking or ALIGN, conflicting paths, an untyped stack slot) or the type is void * or an integer holding an address (unsigned long, uintptr_t, __va()). The compiler knows the struct after the cast; DWARF only has the declared type. Counts are resolution attempts, not samples, so they do not match the 17.95%/27.49% sample-weighted numbers; check what exactly total counts. Access records would address no_typeinfo, no_var and no_mem_ops (the record says it is a memory access). no_cuinfo is hand-written asm: out of reach for records too, like the copy routines on the coverage slide. bad_offset and no_sym/no_insn/no_dbginfo/invalid_size folded into two lines to fit.</aside>
 				</section>
 				<section>
 					<h2>The source names the field.<br>The profiler can do just that much.</h2>
@@ -720,6 +720,36 @@ struct bpf_core_relo {
 						<li>Rule: largest offset, then <a href="https://elixir.bootlin.com/linux/latest/C/ident/is_better_type">is_better_type()</a></li>
 					</ul>
 					<aside class="notes">Backup slide, linked from the ceiling slide. find_data_type_die() walks the DWARF scopes enclosing the sampled PC, innermost inlined block out to the function, asking which variable lives in the base register at this PC; when more than one scope answers there are candidates. Inlining: the TypeCraft paper (section 3.4) example passes a-&gt;b to an inlined callee: in the caller scope the register is a, so the access is struct A member b; in the callee scope it is only the parameter, typed as the type of b. container_of(): one variable sees a struct list_head *, another the enclosing struct, as register plus offset in DWARF. Offset 0: struct foo *f and &amp;f-&gt;first are the same address. typedef: same layout, different name. Replay: update_var_state() faces the same choice for registers and stack slots. Rule: keep the candidate with the largest access offset (usually the outermost struct); on ties is_better_type() prefers a pointer, then the bigger pointed-to type, then struct or union over scalar, then a typedef. Nothing in the binary says which view is right; access records would.</aside>
+				</section>
+				<section id="when-replay">
+					<h2>When replay is needed</h2>
+					<br>
+					<ul>
+						<li>Pointer chasing: foo-&gt;bar-&gt;baz</li>
+						<li>Call results: %rax from the return type</li>
+						<li>Copies and spills: mov, stack slots</li>
+						<li>Gaps: variable optimized out at this PC</li>
+						<li>Pointer arithmetic: lea, add, container_of()</li>
+						<li>percpu, %gs and the stack canary</li>
+					</ul>
+					<aside class="notes">Backup slide, linked from How a sample becomes a type and Why types go unknown. Replay (find_data_type_block) runs when no DWARF variable or parameter is in the base register at the sampled PC and the access is not PC-relative or absolute to a global. Pointer chasing: in foo-&gt;bar-&gt;baz the register used for baz holds foo-&gt;bar, an intermediate with no variable; replay sees the load from foo, types the destination as the type of bar, and resolves through it (TypeCraft paper, section 4). Call results: a returned pointer in %rax has no variable; replay types %rax from the DWARF return type at the call and drops caller-saved registers. Copies and spills: pointer moved to another register or spilled and reloaded, location list only covers the original. Gaps: optimized code often has no location for a variable at some PCs although the value is still in a register. Pointer arithmetic: lea or add of a constant to a pointer keeps the type and adjusts the offset (container_of, member addresses). percpu: %gs-relative accesses and a base built from this_cpu_off are tracked as percpu base/pointer kinds; the stack canary is recognized and set aside. LTO, AutoFDO, BOLT and Propeller degrade DWARF and make this more frequent (TypeCraft: CachyOS ThinLTO kernel 66% DWARF-only coverage vs 75% Ubuntu). Limits: x86 and PowerPC (arm64 in review), conflicts at merge points give up; those end up as no_var or no_typeinfo. In the find / run: 719 of 5910 successes needed replay.</aside>
+				</section>
+				<section id="no-typeinfo">
+					<h2>no_typeinfo: what perf can't see</h2>
+					<br>
+					<pre><code class="language-c" data-trim>
+int f(void *priv)
+{
+	return ((struct bar *)priv)-&gt;x;
+}
+					</code></pre>
+					<ul>
+						<li>DWARF is there: priv is declared void *</li>
+						<li>The compiler knows: struct bar, member x</li>
+						<li>Same for unsigned long, uintptr_t, __va()</li>
+						<li>Or replay lost track: calls, masking, merges</li>
+					</ul>
+					<aside class="notes">Backup slide, linked from Why types go unknown. no_typeinfo counts two replay outcomes in annotate-data.c, PERF_TMR_NO_TYPE and PERF_TMR_NO_POINTER: DWARF is present, the direct lookup found no variable in the base register at the sampled PC, the replay reached the sample, but the register or stack slot had no usable type. NO_POINTER: the type is void *, or an integer holding an address (unsigned long, uintptr_t, phys_addr_t via __va()), common in mm, page tables and allocator internals. DWARF correctly describes the declared type; the cast to struct bar happens in the expression, so no variable carries it, while the compiler knows exactly which struct and member the load touches. NO_TYPE: the replay lost the type before the sample: a call clobbered caller-saved registers, non-constant arithmetic (and masks, pointer tagging, ALIGN()) invalidated it, paths into the block disagreed, or the base is a stack slot never typed on the replayed path. In the find / run: 1450 of 2185 failures, the largest category, and the clearest case for compiler access records.</aside>
 				</section>
 			</div>
 		</div>
